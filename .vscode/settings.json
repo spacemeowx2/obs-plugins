@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "obs-module.h": "c",
+        "xutility": "c",
+        "cmath": "c",
+        "type_traits": "c",
+        "utility": "c",
+        "iosfwd": "c",
+        "stdio.h": "c",
+        "obs-frontend-api.h": "c",
+        "xtr1common": "c",
+        "xlocale": "c",
+        "xmemory0": "c"
+    }
+}

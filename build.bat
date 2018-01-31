@@ -1,0 +1,1 @@
+gcc -g -Iobs-frontend-api -Ilibobs -shared pixel-switcher-filter.c libs/obs.lib libs/obs-frontend-api.lib -o pixel-switcher-filter.dll
