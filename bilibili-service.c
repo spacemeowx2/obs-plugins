@@ -10,7 +10,6 @@ typedef struct {
 } simple_buffer;
 typedef struct bilibili_service_def {
     char *cookie;
-    char *title;
     char *area;
     simple_buffer buffer;
     int32_t area_id;
@@ -18,6 +17,7 @@ typedef struct bilibili_service_def {
     char *addr;
     char *code;
     char *room_id;
+    char csrf_token[64];
 } bilibili_service;
 void bilibili_update(void *data, obs_data_t *settings);
 void reset_buffer(simple_buffer *buf);
@@ -76,11 +76,52 @@ void reset_service(bilibili_service *s)
 {
     bfree(s->room_id);
     bfree(s->cookie);
-    bfree(s->title);
     bfree(s->area);
     bfree(s->code);
     bfree(s->addr);
     reset_buffer(&s->buffer);
+}
+
+void trim_cookie(bilibili_service *s)
+{
+    char *r = s->cookie;
+    char *w = s->cookie;
+    while (*r != '\0')
+    {
+        char c = *r;
+        if (!(c == '\r' || c == '\n'))
+        {
+            *w++ = *r;
+        }
+        r++;
+    }
+    *w = *r;
+}
+
+bool update_csrf_token(bilibili_service *s)
+{
+    const char *jct = "bili_jct=";
+    char *begin = strstr(s->cookie, jct);
+    if (begin == NULL)
+    {
+        // outputf("begin false");
+        return false;
+    }
+    begin += strlen(jct);
+    char *end = strstr(begin, ";");
+    if (end == NULL && end != begin)
+    {
+        end = begin + strlen(begin);
+    }
+    if (end - begin > 60)
+    {
+        // outputf("csrf too long");
+        return false;
+    }
+    memset(s->csrf_token, 0, sizeof(s->csrf_token));
+    memcpy(s->csrf_token, begin, end - begin);
+    // outputf("csrf: %s", s->csrf_token);
+    return true;
 }
 
 void bilibili_update(void *data, obs_data_t *settings)
@@ -90,8 +131,10 @@ void bilibili_update(void *data, obs_data_t *settings)
     reset_service(service);
 
     service->cookie = bstrdup(obs_data_get_string(settings, "cookie"));
-    service->title  = bstrdup(obs_data_get_string(settings, "title"));
     service->area   = bstrdup(obs_data_get_string(settings, "area"));
+
+    trim_cookie(service);
+    update_csrf_token(service);
 }
 
 obs_properties_t *bilibili_properties(void *unused)
@@ -99,7 +142,6 @@ obs_properties_t *bilibili_properties(void *unused)
     obs_properties_t *ppts = obs_properties_create();
 
     obs_properties_add_text(ppts, "cookie", "Cookie", OBS_TEXT_MULTILINE);
-    obs_properties_add_text(ppts, "title", "标题", OBS_TEXT_DEFAULT);
     obs_properties_add_text(ppts, "area", "分区", OBS_TEXT_DEFAULT);
 
     return ppts;
@@ -241,7 +283,7 @@ void stop_live(bilibili_service *s)
     if (curl)
     {
         char post_fields[1024];
-        sprintf(post_fields, "room_id=%s&platform=pc&csrf_token=%s", s->room_id, "2a558eeb19223cdee5792a4a68c7e88f");
+        sprintf(post_fields, "room_id=%s&platform=pc&csrf_token=%s", s->room_id, s->csrf_token);
         CURLcode res;
         reset_buffer(&s->buffer);
         curl_easy_setopt(curl, CURLOPT_URL, "http://api.live.bilibili.com/room/v1/Room/stopLive");
@@ -269,7 +311,7 @@ bool start_live(bilibili_service *s)
     if (curl)
     {
         char post_fields[1024];
-        sprintf(post_fields, "room_id=%s&platform=pc&area_v2=%d&csrf_token=%s", s->room_id, s->area_id, "2a558eeb19223cdee5792a4a68c7e88f");
+        sprintf(post_fields, "room_id=%s&platform=pc&area_v2=%d&csrf_token=%s", s->room_id, s->area_id, s->csrf_token);
         CURLcode res;
         reset_buffer(&s->buffer);
         curl_easy_setopt(curl, CURLOPT_URL, "http://api.live.bilibili.com/room/v1/Room/startLive");
