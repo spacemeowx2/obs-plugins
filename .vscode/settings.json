@@ -12,6 +12,13 @@
         "xlocale": "c",
         "xmemory0": "c",
         "vector": "c",
-        "xstring": "c"
+        "xstring": "c",
+        "curl.h": "c",
+        "memory": "cpp",
+        "xstddef": "cpp",
+        "system_error": "c",
+        "initializer_list": "c",
+        "json.h": "c",
+        "xlocnum": "c"
     }
 }
