@@ -10,6 +10,8 @@
         "obs-frontend-api.h": "c",
         "xtr1common": "c",
         "xlocale": "c",
-        "xmemory0": "c"
+        "xmemory0": "c",
+        "vector": "c",
+        "xstring": "c"
     }
 }
