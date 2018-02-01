@@ -19,6 +19,7 @@
         "system_error": "c",
         "initializer_list": "c",
         "json.h": "c",
-        "xlocnum": "c"
+        "xlocnum": "c",
+        "xiosbase": "c"
     }
 }

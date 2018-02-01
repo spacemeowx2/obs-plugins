@@ -241,10 +241,10 @@ void stop_live(bilibili_service *s)
     if (curl)
     {
         char post_fields[1024];
-        sprintf(post_fields, "room_id=%s&platform=pc&csrf_token=%s", "930140", "2a558eeb19223cdee5792a4a68c7e88f");
+        sprintf(post_fields, "room_id=%s&platform=pc&csrf_token=%s", s->room_id, "2a558eeb19223cdee5792a4a68c7e88f");
         CURLcode res;
         reset_buffer(&s->buffer);
-        curl_easy_setopt(curl, CURLOPT_URL, "http://api.live.bilibili.com/room/v1/Room/startLive");
+        curl_easy_setopt(curl, CURLOPT_URL, "http://api.live.bilibili.com/room/v1/Room/stopLive");
         curl_easy_setopt(curl, CURLOPT_COOKIE, s->cookie);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writefunc);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, s);
@@ -303,10 +303,26 @@ bool start_live(bilibili_service *s)
     return result;
 }
 
+void bilibili_frontend_stop(enum obs_frontend_event event, void *data)
+{
+    bilibili_service *s = data;
+    if (event == OBS_FRONTEND_EVENT_STREAMING_STOPPED)
+    {
+        obs_frontend_remove_event_callback(bilibili_frontend_stop, data);
+        stop_live(s);
+    }
+}
+
+void register_stop_streaming(bilibili_service *s)
+{
+    obs_frontend_add_event_callback(bilibili_frontend_stop, s);
+}
+
 const char *bilibili_url(void *data)
 {
     bilibili_service *s = data;
     start_live(s);
+    register_stop_streaming(s);
     // outputf("url %s", s->addr);
     return s->addr;
 }
