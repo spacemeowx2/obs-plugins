@@ -54,8 +54,9 @@
                 "C:/Program Files (x86)/Windows Kits/10/Include/10.0.15063.0/shared",
                 "C:/Program Files (x86)/Windows Kits/10/Include/10.0.15063.0/winrt",
                 "${workspaceRoot}",
-                "${workspaceRoot}/libobs",
-                "${workspaceRoot}/obs-frontend-api"
+                "${workspaceRoot}/include",
+                "${workspaceRoot}/include/libobs",
+                "${workspaceRoot}/include/obs-frontend-api"
             ],
             "defines": [
                 "_DEBUG",
