@@ -25,7 +25,7 @@ void reset_service(bilibili_service *s);
 
 const char* bilibili_name(void* data)
 {
-    return "Bilibili";
+    return "Bilibili 一键开播 - spacemeowx2";
 }
 
 void *bilibili_create(obs_data_t *settings, obs_service_t *service)
