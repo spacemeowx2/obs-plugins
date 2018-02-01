@@ -1,6 +1,6 @@
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 #include <curl.h>
-#include <cJSON.h>
 #include <stdio.h>
 
 OBS_DECLARE_MODULE();
@@ -155,24 +155,30 @@ bool get_url(bilibili_service *s, const char* url)
     return result;
 }
 
-int32_t get_area_id_in_group(cJSON *group, const char *name)
+int32_t get_area_id_in_group(obs_data_t *group, const char *name)
 {
-    cJSON *list = cJSON_GetObjectItemCaseSensitive(group, "list");
+    obs_data_array_t *list = obs_data_get_array(group, "list");
     if (list)
     {
-        cJSON *item;
-        cJSON_ArrayForEach(item, list)
+        size_t size = obs_data_array_count(list);
+        for (int i = 0; i < size; i++)
         {
-            cJSON *n = cJSON_GetObjectItemCaseSensitive(item, "name");
-            if (n && strcmp(cJSON_GetStringValue(n), name) == 0)
+            obs_data_t *item = obs_data_array_item(list, i);
+            if (item)
             {
-                cJSON *id_item = cJSON_GetObjectItemCaseSensitive(item, "id");
-                if (id_item)
+                const char *n = obs_data_get_string(item, "name");
+                if (strcmp(n, name) == 0)
                 {
-                    return atoi(cJSON_GetStringValue(id_item));
+                    const char *id_str = obs_data_get_string(item, "id");
+                    if (id_str)
+                    {
+                        return atoi(id_str);
+                    }
                 }
+                obs_data_release(item);
             }
         }
+        obs_data_array_release(list);
     }
     return -1;
 }
@@ -181,22 +187,28 @@ bool get_area_id(bilibili_service *s)
 {
     if (get_url(s, "https://api.live.bilibili.com/room/v1/Area/getList"))
     {
-        cJSON *json = cJSON_Parse(s->buffer.buf);
-        if (json)
+        obs_data_t *res = obs_data_create_from_json(s->buffer.buf);
+        if (res)
         {
-            cJSON *data = cJSON_GetObjectItemCaseSensitive(json, "data");
+            obs_data_array_t *data = obs_data_get_array(res, "data");
             if (data)
             {
-                cJSON *group;
-                cJSON_ArrayForEach(group, data)
+                size_t size = obs_data_array_count(data);
+                for (int i = 0; i < size; i++)
                 {
-                    int32_t id = get_area_id_in_group(group, s->area);
-                    if (id != -1)
+                    obs_data_t *group = obs_data_array_item(data, i);
+                    if (group)
                     {
-                        s->area_id = id;
-                        return true;
+                        int32_t id = get_area_id_in_group(group, s->area);
+                        if (id != -1)
+                        {
+                            s->area_id = id;
+                            return true;
+                        }
+                        obs_data_release(group);
                     }
                 }
+                obs_data_array_release(data);
             }
         }
     }
