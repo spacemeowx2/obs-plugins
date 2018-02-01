@@ -438,19 +438,19 @@ void my_source_render(void *data, gs_effect_t *effect)
 }
 
 struct obs_source_info my_source = {
-        .id           = "pixel_switcher_filter",
-        .type         = OBS_SOURCE_TYPE_FILTER,
-        .output_flags = OBS_SOURCE_VIDEO,
-        .get_name     = my_source_name,
-        .create       = my_source_create,
-        .destroy      = my_source_destroy,
-        .update       = my_source_update,
-        .video_tick   = my_source_tick,
-        .video_render = my_source_render
+    .id           = "pixel_switcher_filter",
+    .type         = OBS_SOURCE_TYPE_FILTER,
+    .output_flags = OBS_SOURCE_VIDEO,
+    .get_name     = my_source_name,
+    .create       = my_source_create,
+    .destroy      = my_source_destroy,
+    .update       = my_source_update,
+    .video_tick   = my_source_tick,
+    .video_render = my_source_render
 };
 
 bool obs_module_load(void)
 {
-        obs_register_source(&my_source);
-        return true;
+    obs_register_source(&my_source);
+    return true;
 }
