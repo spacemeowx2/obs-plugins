@@ -11,6 +11,7 @@ typedef struct {
 typedef struct bilibili_service_def {
     char *cookie;
     char *area;
+    bool auto_stop;
     simple_buffer buffer;
     int32_t area_id;
     obs_service_t *context;
@@ -22,6 +23,12 @@ typedef struct bilibili_service_def {
 void bilibili_update(void *data, obs_data_t *settings);
 void reset_buffer(simple_buffer *buf);
 void reset_service(bilibili_service *s);
+
+void my_strdup(char **p, const char *str)
+{
+    bfree(*p);
+    *p = bstrdup(str);
+}
 
 const char* bilibili_name(void* data)
 {
@@ -104,7 +111,7 @@ bool update_csrf_token(bilibili_service *s)
     char *begin = strstr(s->cookie, jct);
     if (begin == NULL)
     {
-        // outputf("begin false");
+        blog(LOG_ERROR, "csrf token begin null");
         return false;
     }
     begin += strlen(jct);
@@ -115,12 +122,12 @@ bool update_csrf_token(bilibili_service *s)
     }
     if (end - begin > 60)
     {
-        // outputf("csrf too long");
+        blog(LOG_ERROR, "csrf token too long");
         return false;
     }
     memset(s->csrf_token, 0, sizeof(s->csrf_token));
     memcpy(s->csrf_token, begin, end - begin);
-    // outputf("csrf: %s", s->csrf_token);
+    blog(LOG_DEBUG, "csrf: %s", s->csrf_token);
     return true;
 }
 
@@ -130,8 +137,9 @@ void bilibili_update(void *data, obs_data_t *settings)
 
     reset_service(service);
 
-    service->cookie = bstrdup(obs_data_get_string(settings, "cookie"));
-    service->area   = bstrdup(obs_data_get_string(settings, "area"));
+    my_strdup(&service->cookie, obs_data_get_string(settings, "cookie"));
+    my_strdup(&service->area  , obs_data_get_string(settings, "area"));
+    service->auto_stop = obs_data_get_bool(settings, "auto_stop");
 
     trim_cookie(service);
     update_csrf_token(service);
@@ -143,8 +151,14 @@ obs_properties_t *bilibili_properties(void *unused)
 
     obs_properties_add_text(ppts, "cookie", "Cookie", OBS_TEXT_MULTILINE);
     obs_properties_add_text(ppts, "area", "分区", OBS_TEXT_DEFAULT);
+    obs_properties_add_bool(ppts, "auto_stop", "停止推流时自动停播");
 
     return ppts;
+}
+
+void bilibili_get_defaults(obs_data_t *settings)
+{
+    obs_data_set_default_bool(settings, "auto_stop", true);
 }
 
 size_t writefunc(void *ptr, size_t size, size_t nmemb, bilibili_service *s)
@@ -252,6 +266,7 @@ bool get_area_id(bilibili_service *s)
                 }
                 obs_data_array_release(data);
             }
+            obs_data_release(res);
         }
     }
     return false;
@@ -269,9 +284,11 @@ bool get_room_id(bilibili_service *s)
         if (obs_data_get_int(res, "code") == 0)
         {
             obs_data_t *data = obs_data_get_obj(res, "data");
-            s->room_id = bstrdup(obs_data_get_string(data, "roomid"));
+            my_strdup(&s->room_id, obs_data_get_string(data, "roomid"));
+            obs_data_release(data);
             return !!s->room_id;
         }
+        obs_data_release(res);
     }
     return false;
 }
@@ -332,15 +349,16 @@ bool start_live(bilibili_service *s)
         obs_data_t *res = obs_data_create_from_json(s->buffer.buf);
         obs_data_t *data = obs_data_get_obj(res, "data");
         obs_data_t *rtmp = obs_data_get_obj(data, "rtmp");
-        char* addr = bstrdup(obs_data_get_string(rtmp, "addr"));
-        char* code = bstrdup(obs_data_get_string(rtmp, "code"));
-        s->addr = addr;
-        s->code = code;
-        // outputf("p %p %p %p\n%s\n%s\n%s", res, data, rtmp, s->addr, s->code, s->buffer.buf);
+        my_strdup(&(s->addr), obs_data_get_string(rtmp, "addr"));
+        my_strdup(&(s->code), obs_data_get_string(rtmp, "code"));
+        obs_data_release(data);
+        obs_data_release(rtmp);
+        obs_data_release(res);
+        blog(LOG_DEBUG, "p %p %p %p\n%s\n%s\n%s", res, data, rtmp, s->addr, s->code, s->buffer.buf);
     }
     else
     {
-        // outputf("failed");
+        blog(LOG_ERROR, "failed to post startLive");
     }
     return result;
 }
@@ -357,7 +375,10 @@ void bilibili_frontend_stop(enum obs_frontend_event event, void *data)
 
 void register_stop_streaming(bilibili_service *s)
 {
-    obs_frontend_add_event_callback(bilibili_frontend_stop, s);
+    if (s->auto_stop)
+    {
+        obs_frontend_add_event_callback(bilibili_frontend_stop, s);
+    }
 }
 
 const char *bilibili_url(void *data)
@@ -365,14 +386,14 @@ const char *bilibili_url(void *data)
     bilibili_service *s = data;
     start_live(s);
     register_stop_streaming(s);
-    // outputf("url %s", s->addr);
+    blog(LOG_DEBUG, "bilibili url %s", s->addr);
     return s->addr;
 }
 
 const char *bilibili_key(void *data)
 {
     bilibili_service *s = data;
-    // outputf("key %s", s->code);
+    blog(LOG_DEBUG, "bilibili key %s", s->code);
     return s->code;
 }
 
@@ -383,6 +404,7 @@ struct obs_service_info my_service = {
     .destroy        = bilibili_destroy,
     .update         = bilibili_update,
     .get_properties = bilibili_properties,
+    .get_defaults   = bilibili_get_defaults,
     .get_url        = bilibili_url,
     .get_key        = bilibili_key,
 };
