@@ -25,6 +25,12 @@ struct filter_data_def {
     float time;
 
     now_state state;
+
+    char* other_scene;
+    char* gaming_scene;
+    uint32_t interval;
+    uint32_t before_gaming;
+    uint32_t before_other;
 };
 typedef struct filter_data_def filter_data;
 struct mRGB_def {
@@ -36,6 +42,7 @@ struct mRGB_def {
 typedef struct mRGB_def mRGB;
 mRGB RGB_BLACK = {0, 0, 0, 0};
 mRGB RGB_WHITE = {255, 255, 255, 0};
+void my_source_update(void *data, obs_data_t *settings);
 
 void elog(const char* s)
 {
@@ -112,6 +119,7 @@ void *my_source_create(obs_data_t *settings, obs_source_t *source)
     f->render = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
     check_size(f);
     obs_leave_graphics();
+    my_source_update(f, settings);
     return f;
 }
 
@@ -126,12 +134,23 @@ void my_source_destroy(void* data)
         gs_stagesurface_destroy(f->copy);
     }
     obs_leave_graphics();
+
+    bfree(f->other_scene);
+    bfree(f->gaming_scene);
     bfree(f);
 }
 
 void my_source_update(void *data, obs_data_t *settings)
 {
+    filter_data *f = data;
+    bfree(f->other_scene);
+    bfree(f->gaming_scene);
 
+    f->other_scene = bstrdup(obs_data_get_string(settings, "other"));
+    f->gaming_scene = bstrdup(obs_data_get_string(settings, "gaming"));
+    f->interval = obs_data_get_int(settings, "interval");
+    f->before_gaming = obs_data_get_int(settings, "before_gaming");
+    f->before_other = obs_data_get_int(settings, "before_other");
 }
 
 void output(const char *str, const char *src)
@@ -229,9 +248,9 @@ bool is_gray(filter_data *f, float x, float y)
     }
     float a = (c.r + c.g + c.b) / 3.0;
     float m = 0;
-    m = fmax(m, abs(c.r - a));
-    m = fmax(m, abs(c.g - a));
-    m = fmax(m, abs(c.b - a));
+    m = fmax(m, fabs(c.r - a));
+    m = fmax(m, fabs(c.g - a));
+    m = fmax(m, fabs(c.b - a));
     if (m > t2)
     {
         return false;
@@ -355,9 +374,9 @@ void my_source_tick(void *data, float tk)
             {
                 f->time_panel_begin = t;
             }
-            if (f->is_time_panel && t - f->time_panel_begin > 3)
+            if (f->is_time_panel && t - f->time_panel_begin > f->before_gaming)
             {
-                switch_scene("pure-switch");
+                switch_scene(f->gaming_scene);
                 f->state = state_playing;
             }
             break;
@@ -366,9 +385,9 @@ void my_source_tick(void *data, float tk)
             {
                 f->time_panel_begin = t;
             }
-            if (!f->is_time_panel && t - f->time_panel_begin > 10)
+            if (!f->is_time_panel && t - f->time_panel_begin > f->before_other)
             {
-                switch_scene("switch");
+                switch_scene(f->other_scene);
                 f->state = state_other;
             }
             break;
@@ -379,7 +398,7 @@ void my_source_render(void *data, gs_effect_t *effect)
 {
     filter_data *f = data;
 
-    if (f->counter >= 15) {
+    if (f->counter >= f->interval) {
         f->counter = 0;
     }
     if (0 != f->counter++)
@@ -437,16 +456,55 @@ void my_source_render(void *data, gs_effect_t *effect)
     draw_render(f->render, width, height);
 }
 
+void add_scene_to_property(obs_property_t *p)
+{
+	struct obs_frontend_source_list list = {0};
+	obs_frontend_get_scenes(&list);
+
+	for (size_t i = 0; i < list.sources.num; i++) {
+		obs_source_t *source = list.sources.array[i];
+        const char *name = obs_source_get_name(source);
+		obs_property_list_add_string(p, name, name);
+	}
+
+    obs_frontend_source_list_free(&list);
+}
+
+obs_properties_t *my_source_properties(void *unused)
+{
+    obs_properties_t *ppts = obs_properties_create();
+    obs_property_t *p;
+
+    obs_properties_add_int_slider(ppts, "interval", "间隔帧数", 1, 240, 1);
+    obs_properties_add_int_slider(ppts, "before_gaming", "进入游戏场景时间(秒)", 1, 15, 1);
+    obs_properties_add_int_slider(ppts, "before_other", "进入空闲场景时间(秒)", 1, 15, 1);
+    p = obs_properties_add_list(ppts, "other", "空闲场景", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+    add_scene_to_property(p);
+    p = obs_properties_add_list(ppts, "gaming", "游戏中场景", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+    add_scene_to_property(p);
+
+    return ppts;
+}
+
+void my_source_defaults(obs_data_t *settings)
+{
+    obs_data_set_default_int(settings, "interval", 30);
+    obs_data_set_default_int(settings, "before_gaming", 3);
+    obs_data_set_default_int(settings, "before_other", 10);
+}
+
 struct obs_source_info my_source = {
-    .id           = "pixel_switcher_filter",
-    .type         = OBS_SOURCE_TYPE_FILTER,
-    .output_flags = OBS_SOURCE_VIDEO,
-    .get_name     = my_source_name,
-    .create       = my_source_create,
-    .destroy      = my_source_destroy,
-    .update       = my_source_update,
-    .video_tick   = my_source_tick,
-    .video_render = my_source_render
+    .id             = "pixel_switcher_filter",
+    .type           = OBS_SOURCE_TYPE_FILTER,
+    .output_flags   = OBS_SOURCE_VIDEO,
+    .get_name       = my_source_name,
+    .create         = my_source_create,
+    .destroy        = my_source_destroy,
+    .update         = my_source_update,
+    .video_tick     = my_source_tick,
+    .video_render   = my_source_render,
+    .get_properties = my_source_properties,
+    .get_defaults   = my_source_defaults
 };
 
 bool obs_module_load(void)
