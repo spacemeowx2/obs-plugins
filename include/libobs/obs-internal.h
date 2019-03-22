@@ -38,6 +38,8 @@
 
 #define NUM_TEXTURES 2
 #define MICROSECOND_DEN 1000000
+#define NUM_ENCODE_TEXTURES 3
+#define NUM_ENCODE_TEXTURE_FRAMES_TO_WAIT 1
 
 static inline int64_t packet_dts_usec(struct encoder_packet *packet)
 {
@@ -225,21 +227,35 @@ struct obs_vframe_info {
 	int count;
 };
 
+struct obs_tex_frame {
+	gs_texture_t *tex;
+	gs_texture_t *tex_uv;
+	uint32_t handle;
+	uint64_t timestamp;
+	uint64_t lock_key;
+	int count;
+	bool released;
+};
+
 struct obs_core_video {
 	graphics_t                      *graphics;
 	gs_stagesurf_t                  *copy_surfaces[NUM_TEXTURES];
 	gs_texture_t                    *render_textures[NUM_TEXTURES];
 	gs_texture_t                    *output_textures[NUM_TEXTURES];
 	gs_texture_t                    *convert_textures[NUM_TEXTURES];
+	gs_texture_t                    *convert_uv_textures[NUM_TEXTURES];
 	bool                            textures_rendered[NUM_TEXTURES];
 	bool                            textures_output[NUM_TEXTURES];
 	bool                            textures_copied[NUM_TEXTURES];
 	bool                            textures_converted[NUM_TEXTURES];
+	bool                            using_nv12_tex;
 	struct circlebuf                vframe_info_buffer;
+	struct circlebuf                vframe_info_buffer_gpu;
 	gs_effect_t                     *default_effect;
 	gs_effect_t                     *default_rect_effect;
 	gs_effect_t                     *opaque_effect;
 	gs_effect_t                     *solid_effect;
+	gs_effect_t                     *repeat_effect;
 	gs_effect_t                     *conversion_effect;
 	gs_effect_t                     *bicubic_effect;
 	gs_effect_t                     *lanczos_effect;
@@ -248,6 +264,17 @@ struct obs_core_video {
 	gs_samplerstate_t               *point_sampler;
 	gs_stagesurf_t                  *mapped_surface;
 	int                             cur_texture;
+	long                            raw_active;
+	long                            gpu_encoder_active;
+	pthread_mutex_t                 gpu_encoder_mutex;
+	struct circlebuf                gpu_encoder_queue;
+	struct circlebuf                gpu_encoder_avail_queue;
+	DARRAY(obs_encoder_t *)         gpu_encoders;
+	os_sem_t                        *gpu_encode_semaphore;
+	os_event_t                      *gpu_encode_inactive;
+	pthread_t                       gpu_encode_thread;
+	bool                            gpu_encode_thread_initialized;
+	volatile bool                   gpu_encode_stop;
 
 	uint64_t                        video_time;
 	uint64_t                        video_avg_frame_time_ns;
@@ -330,6 +357,8 @@ struct obs_core_data {
 
 	long long                       unnamed_index;
 
+	obs_data_t                      *private_data;
+
 	volatile bool                   valid;
 };
 
@@ -408,6 +437,13 @@ extern bool audio_callback(void *param,
 		uint64_t start_ts_in, uint64_t end_ts_in, uint64_t *out_ts,
 		uint32_t mixers, struct audio_output_data *mixes);
 
+extern void start_raw_video(video_t *video,
+		const struct video_scale_info *conversion,
+		void (*callback)(void *param, struct video_data *frame),
+		void *param);
+extern void stop_raw_video(video_t *video,
+		void (*callback)(void *param, struct video_data *frame),
+		void *param);
 
 /* ------------------------------------------------------------------------- */
 /* obs shared context data */
@@ -598,6 +634,7 @@ struct obs_source {
 	float                           volume;
 	int64_t                         sync_offset;
 	int64_t                         last_sync_offset;
+	float                           balance;
 
 	/* async video data */
 	gs_texture_t                    *async_texture;
@@ -695,9 +732,6 @@ extern struct obs_source_info *get_source_info(const char *id);
 extern bool obs_source_init_context(struct obs_source *source,
 		obs_data_t *settings, const char *name,
 		obs_data_t *hotkey_data, bool private);
-
-extern void obs_source_save(obs_source_t *source);
-extern void obs_source_load(obs_source_t *source);
 
 extern bool obs_transition_init(obs_source_t *transition);
 extern void obs_transition_free(obs_source_t *transition);
@@ -855,7 +889,7 @@ struct obs_output {
 	obs_encoder_t                   *video_encoder;
 	obs_encoder_t                   *audio_encoders[MAX_AUDIO_MIXES];
 	obs_service_t                   *service;
-	size_t                          mixer_idx;
+	size_t                          mixer_mask;
 
 	uint32_t                        scaled_width;
 	uint32_t                        scaled_height;
@@ -932,6 +966,9 @@ struct obs_encoder {
 	struct obs_encoder_info         info;
 	struct obs_weak_encoder         *control;
 
+	/* allows re-routing to another encoder */
+	struct obs_encoder_info         orig_info;
+
 	pthread_mutex_t                 init_mutex;
 
 	uint32_t                        samplerate;
@@ -1001,6 +1038,13 @@ extern void obs_encoder_add_output(struct obs_encoder *encoder,
 		struct obs_output *output);
 extern void obs_encoder_remove_output(struct obs_encoder *encoder,
 		struct obs_output *output);
+
+extern bool start_gpu_encode(obs_encoder_t *encoder);
+extern void stop_gpu_encode(obs_encoder_t *encoder);
+
+extern void do_encode(struct obs_encoder *encoder, struct encoder_frame *frame);
+extern void send_off_encoder_packet(obs_encoder_t *encoder, bool success,
+		bool received, struct encoder_packet *pkt);
 
 void obs_encoder_destroy(obs_encoder_t *encoder);
 
