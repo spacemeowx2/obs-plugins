@@ -15,9 +15,9 @@ typedef struct bilibili_service_def {
     simple_buffer buffer;
     int32_t area_id;
     obs_service_t *context;
+    long long room_id;
     char *addr;
     char *code;
-    char *room_id;
     char csrf_token[64];
 } bilibili_service;
 void bilibili_update(void *data, obs_data_t *settings);
@@ -81,7 +81,6 @@ void outputf(const char* format, ...)
 
 void reset_service(bilibili_service *s)
 {
-    bfree(s->room_id);
     bfree(s->cookie);
     bfree(s->area);
     bfree(s->code);
@@ -278,13 +277,13 @@ bool get_room_id(bilibili_service *s)
     {
         return true;
     }
-    if (get_url(s, "http://api.live.bilibili.com/i/api/liveinfo"))
+    if (get_url(s, "https://api.live.bilibili.com/i/api/liveinfo"))
     {
         obs_data_t *res = obs_data_create_from_json(s->buffer.buf);
         if (obs_data_get_int(res, "code") == 0)
         {
             obs_data_t *data = obs_data_get_obj(res, "data");
-            my_strdup(&s->room_id, obs_data_get_string(data, "roomid"));
+            s->room_id = obs_data_get_int(data, "roomid");
             obs_data_release(data);
             return !!s->room_id;
         }
@@ -300,7 +299,7 @@ void stop_live(bilibili_service *s)
     if (curl)
     {
         char post_fields[1024];
-        sprintf(post_fields, "room_id=%s&platform=pc&csrf_token=%s", s->room_id, s->csrf_token);
+        sprintf(post_fields, "room_id=%lld&platform=pc&csrf_token=%s", s->room_id, s->csrf_token);
         CURLcode res;
         reset_buffer(&s->buffer);
         curl_easy_setopt(curl, CURLOPT_URL, "http://api.live.bilibili.com/room/v1/Room/stopLive");
@@ -328,7 +327,7 @@ bool start_live(bilibili_service *s)
     if (curl)
     {
         char post_fields[1024];
-        sprintf(post_fields, "room_id=%s&platform=pc&area_v2=%d&csrf_token=%s", s->room_id, s->area_id, s->csrf_token);
+        sprintf(post_fields, "room_id=%lld&platform=pc&area_v2=%d&csrf_token=%s", s->room_id, s->area_id, s->csrf_token);
         CURLcode res;
         reset_buffer(&s->buffer);
         curl_easy_setopt(curl, CURLOPT_URL, "http://api.live.bilibili.com/room/v1/Room/startLive");
